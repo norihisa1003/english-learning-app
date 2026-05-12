@@ -1,0 +1,42 @@
+import sqlite3
+from datetime import datetime
+
+DATABASE = "english_coach.db"
+
+def get_connection():
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    conn = get_connection()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            reading_level TEXT,
+            listening_level TEXT,
+            speaking_level TEXT,
+            writing_level TEXT,
+            weak_points TEXT,
+            goal TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS learning_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            date TEXT,
+            menu TEXT,
+            completed INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+if __name__ == "__main__":
+    init_db()
+    print("Database initialized successfully.")

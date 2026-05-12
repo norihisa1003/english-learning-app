@@ -1,9 +1,18 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Header
+from fastapi.responses import RedirectResponse
+from starlette.middleware.sessions import SessionMiddleware
 from pydantic import BaseModel
 from database import get_connection, init_db
-import requests
+from auth import oauth, create_access_token, decode_access_token
+import requests as http_requests
+import os
+from dotenv import load_dotenv
+from typing import Optional
+
+load_dotenv()
 
 app = FastAPI()
+app.add_middleware(SessionMiddleware, secret_key=os.getenv("SECRET_KEY"))
 init_db()
 
 class UserProfile(BaseModel):
@@ -15,21 +24,68 @@ class UserProfile(BaseModel):
     weak_points: str
     goal: str
 
+class ProfileUpdate(BaseModel):
+    reading_level: str
+    listening_level: str
+    speaking_level: str
+    writing_level: str
+    weak_points: str
+    goal: str
+
 class WritingInput(BaseModel):
     text: str
 
-@app.post("/users")
-def create_user(profile: UserProfile):
+def get_current_user(authorization: Optional[str] = None):
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization.split(" ")[1]
+    return decode_access_token(token)
+
+@app.get("/auth/login")
+async def login(request: Request):
+    redirect_uri = "http://localhost:8000/auth/callback"
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+@app.get("/auth/callback")
+async def auth_callback(request: Request):
+    token = await oauth.google.authorize_access_token(request)
+    user_info = token.get("userinfo")
+
     conn = get_connection()
-    cursor = conn.execute("""
-        INSERT INTO users (name, reading_level, listening_level, speaking_level, writing_level, weak_points, goal)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (profile.name, profile.reading_level, profile.listening_level,
-          profile.speaking_level, profile.writing_level, profile.weak_points, profile.goal))
-    conn.commit()
-    user_id = cursor.lastrowid
+    existing_user = conn.execute(
+        "SELECT * FROM users WHERE email = ?", (user_info["email"],)
+    ).fetchone()
+
+    if existing_user is None:
+        conn.execute("""
+            INSERT INTO users (name, email)
+            VALUES (?, ?)
+        """, (user_info["name"], user_info["email"]))
+        conn.commit()
+
+    user = conn.execute(
+        "SELECT * FROM users WHERE email = ?", (user_info["email"],)
+    ).fetchone()
     conn.close()
-    return {"user_id": user_id, "message": "Profile created successfully."}
+
+    # JWTトークンを発行
+    access_token = create_access_token({
+        "user_id": user["id"],
+        "user_name": user["name"],
+        "email": user["email"]
+    })
+
+    # StreamlitにトークンをURLパラメータで渡す
+    return RedirectResponse(
+        url=f"http://localhost:8501?token={access_token}"
+    )
+
+@app.get("/auth/me")
+async def get_me(authorization: Optional[str] = Header(None)):
+    user = get_current_user(authorization)
+    if not user:
+        return {"error": "Not authenticated"}
+    return {"user_id": user["user_id"], "user_name": user["user_name"]}
 
 @app.get("/users/{user_id}")
 def get_user(user_id: int):
@@ -39,6 +95,25 @@ def get_user(user_id: int):
     if user is None:
         return {"error": "User not found."}
     return dict(user)
+
+@app.post("/users/{user_id}/profile")
+def update_profile(user_id: int, profile: ProfileUpdate):
+    conn = get_connection()
+    conn.execute("""
+        UPDATE users SET
+            reading_level = ?,
+            listening_level = ?,
+            speaking_level = ?,
+            writing_level = ?,
+            weak_points = ?,
+            goal = ?
+        WHERE id = ?
+    """, (profile.reading_level, profile.listening_level,
+          profile.speaking_level, profile.writing_level,
+          profile.weak_points, profile.goal, user_id))
+    conn.commit()
+    conn.close()
+    return {"message": "Profile updated successfully."}
 
 @app.get("/users/{user_id}/menu")
 def get_menu(user_id: int):
@@ -62,7 +137,7 @@ Profile:
 
 Please suggest a 1-2 hour learning menu for today with specific tasks and time allocation.
 """
-    response = requests.post(
+    response = http_requests.post(
         "http://localhost:11434/api/generate",
         json={
             "model": "llama3.2",
@@ -84,7 +159,7 @@ Please suggest a 1-2 hour learning menu for today with specific tasks and time a
 
 @app.post("/analyze")
 def analyze(input: WritingInput):
-    response = requests.post(
+    response = http_requests.post(
         "http://localhost:11434/api/generate",
         json={
             "model": "llama3.2",

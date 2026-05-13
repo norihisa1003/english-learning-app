@@ -8,8 +8,10 @@ def get_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
-def init_db():
-    conn = get_connection()
+def init_db(conn=None):
+    close_after = conn is None  # 自分でopenした場合だけcloseする
+    if conn is None:
+        conn = get_connection()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,7 +49,8 @@ def init_db():
         )
     """)
     conn.commit()
-    conn.close()
+    if close_after:
+        conn.close()
 
 if __name__ == "__main__":
     init_db()

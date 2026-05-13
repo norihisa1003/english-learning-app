@@ -1,4 +1,3 @@
-# tests/test_database.py
 import sqlite3
 import pytest
 from database import init_db, get_connection
@@ -7,13 +6,11 @@ DATABASE_TEST = ":memory:"  # インメモリDBでテスト
 
 @pytest.fixture
 def db():
-    """テスト用のインメモリDBを作成して返す"""
-    import database
-    original = database.DATABASE
-    database.DATABASE = DATABASE_TEST
-    init_db()
-    yield get_connection()
-    database.DATABASE = original
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    init_db(conn)  # 同じ接続を渡す
+    yield conn
+    conn.close()
 
 def test_users_table_has_email(db):
     """usersテーブルにemailカラムがあるか"""

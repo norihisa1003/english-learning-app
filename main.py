@@ -8,6 +8,7 @@ import requests as http_requests
 import os
 from dotenv import load_dotenv
 from typing import Optional
+import json
 
 load_dotenv()
 
@@ -158,13 +159,73 @@ Please suggest a 1-2 hour learning menu for today with specific tasks and time a
     return {"menu": menu}
 
 @app.post("/analyze")
-def analyze(input: WritingInput):
+def analyze(input: WritingInput, authorization: Optional[str] = Header(None)):
+    user = get_current_user(authorization)
+    if not user:
+        return {"error": "Not authenticated"}
+
+    prompt = f"""Analyze the following English writing and return JSON only, no explanation.
+
+Writing:
+{input.text}
+
+Return this exact format:
+{{
+  "feedback": "overall feedback in 2-3 sentences",
+  "errors": [
+    {{"type": "article", "original": "...", "corrected": "...", "explanation": "..."}}
+  ],
+  "error_types": ["article", "tense"]
+}}
+
+Error types must be chosen from: article, tense, preposition, noun_phrase, spelling, other"""
+
     response = http_requests.post(
         "http://localhost:11434/api/generate",
-        json={
-            "model": "llama3.2",
-            "prompt": f"Please analyze the following English writing for grammar errors:\n\n{input.text}",
-            "stream": False
-        }
+        json={"model": "llama3.2", "prompt": prompt, "stream": False}
     )
-    return {"result": response.json()["response"]}
+
+    # JSONパース
+    try:
+        raw = response.json()["response"]
+        result = json.loads(raw)
+    except (json.JSONDecodeError, KeyError):
+        return {"error": "Failed to parse Ollama response", "raw": response.json().get("response")}
+
+    # DBに保存
+    conn = get_connection()
+    conn.execute("""
+        INSERT INTO writing_analyses (user_id, original_text, feedback, error_types)
+        VALUES (?, ?, ?, ?)
+    """, (
+        user["user_id"],
+        input.text,
+        result.get("feedback", ""),
+        json.dumps(result.get("error_types", []))
+    ))
+    conn.commit()
+    conn.close()
+
+    return result
+
+@app.get("/users/{user_id}/analyses")
+def get_analyses(user_id: int, authorization: Optional[str] = Header(None)):
+    user = get_current_user(authorization)
+    if not user:
+        return {"error": "Not authenticated"}
+    if user["user_id"] != user_id:
+        return {"error": "Forbidden"}
+
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT id, original_text, feedback, error_types, created_at
+        FROM writing_analyses
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+    """, (user_id,)).fetchall()
+    conn.close()
+
+    return [
+        {**dict(row), "error_types": json.loads(row["error_types"] or "[]")}
+        for row in rows
+    ]

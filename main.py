@@ -12,6 +12,8 @@ import json
 
 load_dotenv()
 
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SECRET_KEY"))
 init_db()
@@ -141,7 +143,7 @@ Please suggest a 1-2 hour learning menu for today with specific tasks and time a
     response = http_requests.post(
         "http://localhost:11434/api/generate",
         json={
-            "model": "llama3.2",
+            "model": OLLAMA_MODEL,
             "prompt": prompt,
             "stream": False
         }
@@ -182,7 +184,7 @@ Error types must be chosen from: article, tense, preposition, noun_phrase, spell
 
     response = http_requests.post(
         "http://localhost:11434/api/generate",
-        json={"model": "llama3.2", "prompt": prompt, "stream": False}
+        json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False}
     )
 
     # JSONパース
@@ -229,3 +231,93 @@ def get_analyses(user_id: int, authorization: Optional[str] = Header(None)):
         {**dict(row), "error_types": json.loads(row["error_types"] or "[]")}
         for row in rows
     ]
+
+@app.get("/users/{user_id}/weak_points")
+def get_weak_points(user_id: int, authorization: Optional[str] = Header(None)):
+    user = get_current_user(authorization)
+    if not user or user["user_id"] != user_id:
+        return {"error": "Not authenticated"}
+
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT error_types FROM writing_analyses
+        WHERE user_id = ?
+    """, (user_id,)).fetchall()
+    conn.close()
+
+    # error_types を集計
+    counter = {}
+    for row in rows:
+        types = json.loads(row["error_types"] or "[]")
+        for t in types:
+            counter[t] = counter.get(t, 0) + 1
+
+    if not counter:
+        return {"weak_points": [], "top_weak_point": None}
+
+    sorted_points = sorted(counter.items(), key=lambda x: x[1], reverse=True)
+    return {
+        "weak_points": [{"type": t, "count": c} for t, c in sorted_points],
+        "top_weak_point": sorted_points[0][0]
+    }
+
+
+@app.post("/users/{user_id}/training")
+def generate_training(user_id: int, authorization: Optional[str] = Header(None)):
+    user = get_current_user(authorization)
+    if not user or user["user_id"] != user_id:
+        return {"error": "Not authenticated"}
+
+    # 弱点を取得
+    weak_points_data = get_weak_points(user_id, authorization)
+    top_weak_point = weak_points_data.get("top_weak_point")
+
+    if not top_weak_point:
+        return {"error": "No weak points found. Please analyze some writing first."}
+
+    prompt = f"""You are an English teacher. Create 3 training exercises focused ONLY on "{top_weak_point}" errors.
+
+Rules:
+- Every exercise must specifically target "{top_weak_point}" mistakes
+- Use ONLY this JSON format, no variations
+
+Return JSON only, no explanation:
+
+{{
+  "weak_point": "{top_weak_point}",
+  "exercises": [
+    {{
+      "format": "fill_in_the_blank or error_correction",
+      "question": "the exercise sentence with ___ for blanks, or the incorrect sentence to fix",
+      "answer": "the correct answer",
+      "explanation": "why this is the correct answer, specifically about {top_weak_point}"
+    }}
+  ]
+}}
+
+Example for article errors:
+{{
+  "format": "fill_in_the_blank",
+  "question": "I saw ___ elephant at the zoo.",
+  "answer": "an",
+  "explanation": "Use 'an' before words starting with a vowel sound."
+}}"""
+
+    response = http_requests.post(
+        "http://localhost:11434/api/generate",
+        json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False}
+    )
+
+    try:
+        raw = response.json()["response"]
+        print(f"[Ollama raw response]\n{raw}")
+        parsed = json.loads(raw)
+        # Ollamaがリストを直接返した場合に対応
+        if isinstance(parsed, list):
+            result = {"weak_point": top_weak_point, "exercises": parsed}
+        else:
+            result = parsed
+    except (json.JSONDecodeError, KeyError):
+        return {"error": "Failed to parse Ollama response", "raw": response.json().get("response")}
+
+    return result

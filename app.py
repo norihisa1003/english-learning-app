@@ -42,7 +42,7 @@ else:
 
     menu = st.sidebar.selectbox(
         "Menu",
-        ["Today's Menu", "Analyze Writing", "History", "Register Profile"]
+        ["Today's Menu", "Analyze Writing", "Training", "History", "Register Profile"]
     )
 
     if menu == "Register Profile":
@@ -111,6 +111,49 @@ else:
                         st.subheader("Error Types")
                         st.write(", ".join(error_types))
 
+    elif menu == "Training":
+        st.header("Personalized Training")
+
+        wp_response = api_get(f"/users/{user_id}/weak_points")
+        wp_data = wp_response.json()
+
+        if not wp_data.get("top_weak_point"):
+            st.info("No data yet. Please analyze some writing first.")
+        else:
+            st.subheader("Your Weak Points")
+            for wp in wp_data.get("weak_points", []):
+                st.write(f"- **{wp['type']}**: {wp['count']} times")
+
+            st.divider()
+            st.subheader(f"Today's Focus: `{wp_data['top_weak_point']}`")
+
+            if st.button("Generate Exercises"):
+                with st.spinner("Generating exercises..."):
+                    response = api_post(f"/users/{user_id}/training", {})
+                    result = response.json()
+
+                if "error" in result:
+                    st.error(result["error"])
+                    if "raw" in result:
+                        st.code(result["raw"])
+                else:
+                    # session_stateに保存することでページ再レンダリング後も残る
+                    st.session_state["exercises"] = result.get("exercises", [])
+                    st.session_state["show_answers"] = {}
+
+            # exercisesはsession_stateから読む
+            exercises = st.session_state.get("exercises", [])
+            for i, ex in enumerate(exercises, 1):
+                with st.expander(f"Exercise {i} [{ex.get('format', '')}]", expanded=True):
+                    st.write(f"**Question:** {ex.get('question', '')}")
+
+                    if st.button(f"Show Answer", key=f"answer_{i}"):
+                        st.session_state["show_answers"][i] = True
+
+                    if st.session_state.get("show_answers", {}).get(i):
+                        st.success(f"Answer: {ex.get('answer', '')}")
+                        st.write(f"**Explanation:** {ex.get('explanation', '')}")
+                        
     elif menu == "History":
         st.header("Analysis History")
 

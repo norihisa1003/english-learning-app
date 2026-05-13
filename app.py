@@ -167,4 +167,4 @@ else:
                 with st.expander(f"{item['created_at'][:10]} — {item['original_text'][:40]}..."):
                     st.write(f"**Feedback:** {item['feedback']}")
                     st.write(f"**Error types:** {', '.join(item['error_types'])}")
-                    st.text_area("Original text", item["original_text"], disabled=True)
+                    st.text_area("Original text", item["original_text"], disabled=True, key=f"history_text_{item['id']}")

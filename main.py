@@ -232,24 +232,16 @@ def get_analyses(user_id: int, authorization: Optional[str] = Header(None)):
         for row in rows
     ]
 
-@app.get("/users/{user_id}/weak_points")
-def get_weak_points(user_id: int, authorization: Optional[str] = Header(None)):
-    user = get_current_user(authorization)
-    if not user or user["user_id"] != user_id:
-        return {"error": "Not authenticated"}
-
+def _aggregate_weak_points(user_id: int) -> dict:
     conn = get_connection()
-    rows = conn.execute("""
-        SELECT error_types FROM writing_analyses
-        WHERE user_id = ?
-    """, (user_id,)).fetchall()
+    rows = conn.execute(
+        "SELECT error_types FROM writing_analyses WHERE user_id = ?", (user_id,)
+    ).fetchall()
     conn.close()
 
-    # error_types を集計
     counter = {}
     for row in rows:
-        types = json.loads(row["error_types"] or "[]")
-        for t in types:
+        for t in json.loads(row["error_types"] or "[]"):
             counter[t] = counter.get(t, 0) + 1
 
     if not counter:
@@ -261,6 +253,13 @@ def get_weak_points(user_id: int, authorization: Optional[str] = Header(None)):
         "top_weak_point": sorted_points[0][0]
     }
 
+@app.get("/users/{user_id}/weak_points")
+def get_weak_points(user_id: int, authorization: Optional[str] = Header(None)):
+    user = get_current_user(authorization)
+    if not user or user["user_id"] != user_id:
+        return {"error": "Not authenticated"}
+    return _aggregate_weak_points(user_id)
+
 
 @app.post("/users/{user_id}/training")
 def generate_training(user_id: int, authorization: Optional[str] = Header(None)):
@@ -269,7 +268,7 @@ def generate_training(user_id: int, authorization: Optional[str] = Header(None))
         return {"error": "Not authenticated"}
 
     # 弱点を取得
-    weak_points_data = get_weak_points(user_id, authorization)
+    weak_points_data = _aggregate_weak_points(user_id)
     top_weak_point = weak_points_data.get("top_weak_point")
 
     if not top_weak_point:

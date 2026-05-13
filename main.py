@@ -13,6 +13,8 @@ import json
 load_dotenv()
 
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+API_PUBLIC_URL = os.getenv("API_PUBLIC_URL", "http://localhost:8000")
+UI_PUBLIC_URL = os.getenv("UI_PUBLIC_URL", "http://localhost:8501")
 
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SECRET_KEY"))
@@ -46,7 +48,7 @@ def get_current_user(authorization: Optional[str] = None):
 
 @app.get("/auth/login")
 async def login(request: Request):
-    redirect_uri = "http://localhost:8000/auth/callback"
+    redirect_uri = f"{API_PUBLIC_URL}/auth/callback"
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
 @app.get("/auth/callback")
@@ -80,7 +82,7 @@ async def auth_callback(request: Request):
 
     # StreamlitにトークンをURLパラメータで渡す
     return RedirectResponse(
-        url=f"http://localhost:8501?token={access_token}"
+        url=f"{UI_PUBLIC_URL}?token={access_token}"
     )
 
 @app.get("/auth/me")
@@ -141,7 +143,7 @@ Profile:
 Please suggest a 1-2 hour learning menu for today with specific tasks and time allocation.
 """
     response = http_requests.post(
-        "http://localhost:11434/api/generate",
+        "http://ollama:11434/api/generate",
         json={
             "model": OLLAMA_MODEL,
             "prompt": prompt,
@@ -183,7 +185,7 @@ Return this exact format:
 Error types must be chosen from: article, tense, preposition, noun_phrase, spelling, other"""
 
     response = http_requests.post(
-        "http://localhost:11434/api/generate",
+        "http://ollama:11434/api/generate",
         json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False}
     )
 
@@ -303,7 +305,7 @@ Example for article errors:
 }}"""
 
     response = http_requests.post(
-        "http://localhost:11434/api/generate",
+        "http://ollama:11434/api/generate",
         json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False}
     )
 

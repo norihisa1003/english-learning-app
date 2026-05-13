@@ -1,7 +1,13 @@
+import os
+
 import streamlit as st
 import requests
 
-API_URL = "http://localhost:8000"
+from dotenv import load_dotenv
+load_dotenv()
+
+API_INTERNAL_URL = os.getenv("API_INTERNAL_URL", "http://localhost:8000")
+API_PUBLIC_URL = os.getenv("API_PUBLIC_URL", "http://localhost:8000")
 
 # URLパラメータからトークンを取得
 params = st.query_params
@@ -15,11 +21,11 @@ token = st.session_state.get("token", None)
 
 def api_get(path: str):
     headers = {"Authorization": f"Bearer {token}"} if token else {}
-    return requests.get(f"{API_URL}{path}", headers=headers)
+    return requests.get(f"{API_INTERNAL_URL}{path}", headers=headers)
 
 def api_post(path: str, json: dict):
     headers = {"Authorization": f"Bearer {token}"} if token else {}
-    return requests.post(f"{API_URL}{path}", json=json, headers=headers)
+    return requests.post(f"{API_INTERNAL_URL}{path}", json=json, headers=headers)
 
 st.title("English Learning Coach")
 
@@ -27,7 +33,7 @@ if not token:
     st.warning("Please login to continue.")
     if st.button("Login with Google"):
         st.markdown(
-            f'<meta http-equiv="refresh" content="0;url={API_URL}/auth/login">',
+            f'<meta http-equiv="refresh" content="0;url={API_PUBLIC_URL}/auth/login">',
             unsafe_allow_html=True
         )
 else:

@@ -15,6 +15,7 @@ load_dotenv()
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 API_PUBLIC_URL = os.getenv("API_PUBLIC_URL", "http://localhost:8000")
 UI_PUBLIC_URL = os.getenv("UI_PUBLIC_URL", "http://localhost:8501")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SECRET_KEY"))
@@ -143,7 +144,7 @@ Profile:
 Please suggest a 1-2 hour learning menu for today with specific tasks and time allocation.
 """
     response = http_requests.post(
-        "http://ollama:11434/api/generate",
+        f"{OLLAMA_URL}/api/generate",
         json={
             "model": OLLAMA_MODEL,
             "prompt": prompt,
@@ -185,7 +186,7 @@ Return this exact format:
 Error types must be chosen from: article, tense, preposition, noun_phrase, spelling, other"""
 
     response = http_requests.post(
-        "http://ollama:11434/api/generate",
+        f"{OLLAMA_URL}/api/generate",
         json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False}
     )
 
@@ -305,7 +306,7 @@ Example for article errors:
 }}"""
 
     response = http_requests.post(
-        "http://ollama:11434/api/generate",
+        f"{OLLAMA_URL}/api/generate",
         json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False}
     )
 

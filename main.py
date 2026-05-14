@@ -124,8 +124,22 @@ def update_profile(user_id: int, profile: ProfileUpdate):
 @app.get("/users/{user_id}/menu")
 def get_menu(user_id: int):
     conn = get_connection()
+    
+    # 今日のメニューがすでにあればそれを返す
+    existing = conn.execute("""
+        SELECT menu FROM learning_logs
+        WHERE user_id = ? AND date = DATE('now')
+        ORDER BY created_at DESC LIMIT 1
+    """, (user_id,)).fetchone()
+    
+    if existing:
+        conn.close()
+        return {"menu": existing["menu"]}
+
+    # なければLLMで生成
     user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     conn.close()
+
     if user is None:
         return {"error": "User not found."}
 
@@ -143,13 +157,10 @@ Profile:
 
 Please suggest a 1-2 hour learning menu for today with specific tasks and time allocation.
 """
+
     response = http_requests.post(
         f"{OLLAMA_URL}/api/generate",
-        json={
-            "model": OLLAMA_MODEL,
-            "prompt": prompt,
-            "stream": False
-        }
+        json={"model": os.getenv("OLLAMA_MODEL"), "prompt": prompt, "stream": False}
     )
     menu = response.json()["response"]
 

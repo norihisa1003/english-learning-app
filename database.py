@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 import os
 
 load_dotenv()
-DATABASE = os.getenv("DATABASE")
+DATABASE = "english_coach.db"
 
 def get_connection():
     conn = sqlite3.connect(DATABASE)

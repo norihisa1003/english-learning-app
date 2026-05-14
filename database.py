@@ -1,7 +1,9 @@
 import sqlite3
-from datetime import datetime
+from dotenv import load_dotenv
+import os
 
-DATABASE = "english_coach.db"
+load_dotenv()
+DATABASE = os.getenv("DATABASE")
 
 def get_connection():
     conn = sqlite3.connect(DATABASE)
@@ -48,6 +50,38 @@ def init_db(conn=None):
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS login_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            login_date TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS test_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            question TEXT NOT NULL,
+            user_answer TEXT NOT NULL,
+            correct_answer TEXT NOT NULL,
+            is_correct INTEGER NOT NULL,
+            error_type TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    # Insert default user profile (skipped if already exists due to UNIQUE constraint on email)
+    conn.execute("""
+        INSERT OR IGNORE INTO users (name, email, reading_level, listening_level, speaking_level, writing_level, weak_points, goal)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        os.getenv("DEFAULT_USER_NAME"),
+        os.getenv("DEFAULT_USER_EMAIL"),
+        "C2", "C2", "B2", "B2",
+        "article, tense",
+        "work overseas"
+    ))
     conn.commit()
     if close_after:
         conn.close()
